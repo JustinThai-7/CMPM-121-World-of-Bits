@@ -18,7 +18,7 @@ Key technical challenge: Can you assemble a map-based user interface using the L
 
 ## To-Do
 
-- render leaflet map WORKING
-- generate cells CODED
-- create cell contents/interactibility CODED
-- random spawning
+- [x] render leaflet map WORKING
+- [x] generate cells CODED
+- [x] create cell contents/interactibility CODED
+- [x] random spawning

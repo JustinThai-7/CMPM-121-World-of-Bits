@@ -1,190 +1,212 @@
-// @deno-types="npm:@types/leaflet"
 import leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
-import "./_leafletWorkaround.ts"; // fixes marker icons
+import "./_leafletWorkaround.ts";
 import luck from "./_luck.ts";
 import "./style.css";
 
-// === Create and append map container ===
-const mapDiv = document.createElement("div");
-mapDiv.id = "map";
-mapDiv.style.width = "100%";
-mapDiv.style.height = "90vh";
-document.body.appendChild(mapDiv);
-
-// === Game Settings ===
-const CLASSROOM_LATLNG = leaflet.latLng(
-  36.997936938057016,
-  -122.05703507501151,
-); // Stevenson College, UCSC
-
-const GAMEPLAY_ZOOM = 19; // Fixed zoom for grid precision
-const TILE_DEGREES = 1e-4; // ~11 meters per tile
-const GRID_RADIUS = 2; // 5x5 grid centered on player (radius 2)
-
-// === Create Leaflet Map ===
-const map = leaflet.map(mapDiv, {
-  center: CLASSROOM_LATLNG,
-  zoom: GAMEPLAY_ZOOM,
-  minZoom: GAMEPLAY_ZOOM,
-  maxZoom: GAMEPLAY_ZOOM,
-  zoomControl: false,
-  scrollWheelZoom: false,
-});
-
-// === Add Background Tile Layer ===
-leaflet
-  .tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution:
-      '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  })
-  .addTo(map);
+// === Constants ===
+const TILE_DEGREES = 1e-4;
+const PIT_SPAWN_PROBABILITY = 0.1;
 
 // === Game State ===
-const playerRow = 0; // offset in grid
-const playerCol = 0;
-let inventory = 0; // player holds 0 or one token value
+interface Cell {
+  i: number;
+  j: number;
+}
+
+const playerPosition = {
+  lat: 36.9995,
+  lng: -122.0533,
+};
+
+let inventory: number | null = null;
+
+// === Map Setup ===
+const map = leaflet.map(document.createElement("div"), {
+  zoomControl: false,
+  scrollWheelZoom: false,
+  boxZoom: false,
+  dragging: false,
+  doubleClickZoom: false,
+}).setView(playerPosition, 19);
+
+// Append map to body
+const mapElement = map.getContainer();
+mapElement.id = "map";
+mapElement.style.width = "100%";
+mapElement.style.height = "100vh";
+document.body.appendChild(mapElement);
+
+leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution:
+    '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+}).addTo(map);
+
+// === UI Setup ===
 const statusPanel = document.createElement("div");
-statusPanel.id = "statusPanel";
-statusPanel.textContent = "Inventory: empty";
+statusPanel.style.position = "absolute";
+statusPanel.style.top = "10px";
+statusPanel.style.left = "10px";
+statusPanel.style.zIndex = "1000";
+statusPanel.style.backgroundColor = "white";
+statusPanel.style.padding = "10px";
+statusPanel.style.border = "1px solid #ccc";
+statusPanel.style.borderRadius = "5px";
+statusPanel.innerHTML = "Inventory: Empty";
 document.body.appendChild(statusPanel);
 
-// === Draw Grid Cells ===
-function drawGrid() {
-  // Clear existing grid cells by removing all rectangle layers marked as grid
-  map.eachLayer((layer) => {
-    const layerOptions =
-      (layer as unknown as { options?: { pane?: string } }).options;
-    if (layer instanceof leaflet.Rectangle && layerOptions?.pane === "grid") {
-      map.removeLayer(layer);
-    }
-  });
+// === Helper Functions ===
 
-  // Define grid bounds centered on player
-  const minI = playerRow - GRID_RADIUS;
-  const maxI = playerRow + GRID_RADIUS;
-  const minJ = playerCol - GRID_RADIUS;
-  const maxJ = playerCol + GRID_RADIUS;
+function getCellBounds(cell: Cell): leaflet.LatLngBounds {
+  const lat = cell.i * TILE_DEGREES;
+  const lng = cell.j * TILE_DEGREES;
+  return leaflet.latLngBounds([
+    [lat, lng],
+    [lat + TILE_DEGREES, lng + TILE_DEGREES],
+  ]);
+}
 
-  for (let i = minI; i <= maxI; i++) {
-    for (let j = minJ; j <= maxJ; j++) {
-      // Define cell bounds using classroom as origin
-      const origin = CLASSROOM_LATLNG;
-      const cellBounds = leaflet.latLngBounds([
-        [origin.lat + i * TILE_DEGREES, origin.lng + j * TILE_DEGREES],
-        [
-          origin.lat + (i + 1) * TILE_DEGREES,
-          origin.lng + (j + 1) * TILE_DEGREES,
-        ],
-      ]);
+function latLngToCell(lat: number, lng: number): Cell {
+  return {
+    i: Math.floor(lat / TILE_DEGREES),
+    j: Math.floor(lng / TILE_DEGREES),
+  };
+}
 
-      // Generate deterministic token value using luck()
-      const seed = [i, j, "tokenValue"].toString();
-      const hasToken = luck(seed) > 0.5; // 50% chance, but deterministic
-      const tokenValue = hasToken ? 1 : 0;
+// === Mechanics ===
+const activeRectangles: leaflet.Rectangle[] = [];
 
-      // Add rectangle for the cell
-      const cell = leaflet.rectangle(cellBounds, {
-        pane: "grid",
-        fillColor: tokenValue > 0 ? "#4CAF50" : "#f0f0f0",
-        fillOpacity: 0.7,
-        color: "#333",
+function updateStatus() {
+  if (inventory === null) {
+    statusPanel.innerHTML = "Inventory: Empty";
+  } else {
+    statusPanel.innerHTML = `Inventory: Token Value ${inventory}`;
+  }
+}
+
+// State to track modified cells (collected/crafted)
+// Key: "i,j", Value: number (token value) or 0 (empty)
+const cellState = new Map<string, number>();
+
+function getCellValue(i: number, j: number): number {
+  const key = `${i},${j}`;
+  if (cellState.has(key)) {
+    return cellState.get(key)!;
+  }
+  // Default deterministic value
+  const cellRandom = luck([i, j, "initialValue"].toString());
+  if (cellRandom < PIT_SPAWN_PROBABILITY) {
+    return 1; // Initial token value
+  }
+  return 0; // Empty
+}
+
+function setCellValue(i: number, j: number, value: number) {
+  const key = `${i},${j}`;
+  cellState.set(key, value);
+  render(); // Re-render to show changes
+}
+
+function render() {
+  // Clear existing layers
+  activeRectangles.forEach((rect) => map.removeLayer(rect));
+  activeRectangles.length = 0;
+
+  const bounds = map.getBounds();
+  const northWestCell = latLngToCell(bounds.getNorth(), bounds.getWest());
+  const southEastCell = latLngToCell(bounds.getSouth(), bounds.getEast());
+
+  for (let i = southEastCell.i; i <= northWestCell.i; i++) {
+    for (let j = northWestCell.j; j <= southEastCell.j; j++) {
+      const bounds = getCellBounds({ i, j });
+      const value = getCellValue(i, j);
+
+      let color = "transparent";
+      if (value > 0) {
+        color = "red"; // Token present
+      }
+
+      const rect = leaflet.rectangle(bounds, {
+        color: "black",
         weight: 1,
-      }).addTo(map);
+        fillColor: color,
+        fillOpacity: 0.5,
+      });
 
-      // Store token value in cell data
-      (cell as unknown as Record<string, number>).tokenValue = tokenValue;
+      rect.addTo(map);
+      activeRectangles.push(rect);
 
-      // Create popup content
-      cell.bindPopup(() => {
-        const popupDiv = document.createElement("div");
+      // Interaction
+      rect.on("click", () => {
+        // Check distance
+        const playerCell = latLngToCell(playerPosition.lat, playerPosition.lng);
+        const distI = Math.abs(i - playerCell.i);
+        const distJ = Math.abs(j - playerCell.j);
 
-        // Compute distance from player
-        const dRow = Math.abs(i - playerRow);
-        const dCol = Math.abs(j - playerCol);
-        const inRange = dRow <= 1 && dCol <= 1; // 3×3 interaction radius
-
-        // Display token and controls
-        if (tokenValue > 0) {
-          popupDiv.innerHTML = `
-            <div>Cell (${i}, ${j})</div>
-            <div>Token: <strong>${tokenValue}</strong></div>
-            <div style="margin: 8px 0; font-size: 0.9em; color: ${
-            inRange ? "green" : "red"
-          }">
-              ${inRange ? "InteractionEnabled" : "Too far away"}
-            </div>
-          `;
-
-          // Only show interaction buttons if in range
-          if (inRange) {
-            if (inventory === 0 && tokenValue > 0) {
-              const collectBtn = document.createElement("button");
-              collectBtn.textContent = "Collect";
-              collectBtn.addEventListener("click", () => {
-                const cellData = cell as unknown as Record<string, number>;
-                if (inventory === 0 && cellData.tokenValue > 0) {
-                  inventory = cellData.tokenValue;
-                  statusPanel.textContent = `Inventory: ${inventory}`;
-                  cellData.tokenValue = 0; // remove token from cell
-                  cell.setStyle({ fillColor: "#f0f0f0" }); // visual feedback
-                  cell.setPopupContent("<div>Collected!</div>"); // update popup
-                }
-              });
-              popupDiv.appendChild(collectBtn);
-            } else if (inventory > 0 && tokenValue === inventory) {
-              const craftBtn = document.createElement("button");
-              craftBtn.textContent = "Craft";
-              craftBtn.addEventListener("click", () => {
-                const cellData = cell as unknown as Record<string, number>;
-                const newValue = inventory * 2;
-                statusPanel.textContent = `Crafted! New token: ${newValue}`;
-                inventory = newValue;
-                // Update cell to show new token value
-                cellData.tokenValue = newValue;
-                cell.setStyle({ fillColor: "#FF9800" });
-                cell.setPopupContent(`
-                  <div>Cell (${i}, ${j})</div>
-                  <div>Token: <strong>${newValue}</strong></div>
-                  <div style="color: green;">Crafted!</div>
-                `);
-
-                // Optional: Victory condition
-                if (inventory >= 16) {
-                  setTimeout(() => {
-                    alert(
-                      "🎉 Victory! You've crafted a token of value 16 or higher!",
-                    );
-                  }, 100);
-                }
-              });
-              popupDiv.appendChild(craftBtn);
-            } else if (inventory > 0 && tokenValue !== inventory) {
-              popupDiv.innerHTML +=
-                "<div>Values don't match for crafting.</div>";
-            } else if (tokenValue === 0) {
-              popupDiv.innerHTML += "<div>No token to collect.</div>";
-            }
-          } else {
-            popupDiv.innerHTML += "<div><em>Move closer to interact</em></div>";
-          }
-        } else {
-          popupDiv.innerHTML =
-            `<div>Cell (${i}, ${j})</div><div>No token here.</div>`;
+        if (distI > 1 || distJ > 1) {
+          console.log("Too far");
+          return;
         }
 
-        return popupDiv;
+        console.log(
+          `Clicked cell (${i}, ${j}). Value: ${value}. Inventory: ${inventory}`,
+        );
+
+        if (value > 0) {
+          // Collect or Craft
+          if (inventory === null) {
+            // Collect
+            console.log("Collecting token");
+            inventory = value;
+            setCellValue(i, j, 0);
+            updateStatus();
+          } else if (inventory === value) {
+            // Craft
+            console.log("Crafting token");
+            // inventory += value; // This line was redundant/confusing in previous logic
+            // updateStatus();
+            // setCellValue(i, j, 0);
+
+            // Correct crafting logic:
+            // 1. Remove token from inventory (it merges into the cell)
+            inventory = null;
+            // 2. Cell value doubles
+            setCellValue(i, j, value * 2);
+            updateStatus();
+          }
+        } else {
+          // Deposit?
+          if (inventory !== null) {
+            console.log("Depositing token");
+            setCellValue(i, j, inventory);
+            inventory = null;
+            updateStatus();
+          } else {
+            console.log("Cannot deposit: inventory empty");
+          }
+        }
+        console.log(`End click. Inventory: ${inventory}`);
       });
+
+      // Popup for info (optional but helpful)
+      if (value > 0) {
+        rect.bindTooltip(`Value: ${value}`);
+      }
     }
   }
 
-  // === Add Player Marker ===
-  const playerMarker = leaflet.marker(CLASSROOM_LATLNG, {
-    title: "You are here",
-  }).addTo(map);
-  playerMarker.bindTooltip("👤 You");
+  // Player marker
+  const playerMarker = leaflet.marker(playerPosition);
+  playerMarker.addTo(map);
+  playerMarker.bindTooltip("You");
 }
+// Initialize game
+map.whenReady(() => {
+  map.invalidateSize();
+  render();
+});
 
-// === Initialize Game ===
-drawGrid();
+map.on("moveend", () => {
+  render();
+});
