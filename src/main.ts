@@ -6,7 +6,9 @@ import "./style.css";
 
 // === Constants ===
 const TILE_DEGREES = 1e-4;
-const PIT_SPAWN_PROBABILITY = 0.1;
+const PIT_SPAWN_PROBABILITY = 0.5;
+const INTERACTION_RANGE = 3; // Number of cells away player can interact
+const VICTORY_THRESHOLD = 16; // Token value needed for victory
 
 // === Game State ===
 interface Cell {
@@ -56,6 +58,57 @@ statusPanel.style.borderRadius = "5px";
 statusPanel.innerHTML = "Inventory: Empty";
 document.body.appendChild(statusPanel);
 
+// === Movement Controls ===
+const controlPanel = document.createElement("div");
+controlPanel.style.position = "absolute";
+controlPanel.style.bottom = "10px";
+controlPanel.style.left = "50%";
+controlPanel.style.transform = "translateX(-50%)";
+controlPanel.style.zIndex = "1000";
+controlPanel.style.display = "flex";
+controlPanel.style.flexDirection = "column";
+controlPanel.style.alignItems = "center";
+controlPanel.style.gap = "5px";
+document.body.appendChild(controlPanel);
+
+function createButton(text: string, onClick: () => void): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.textContent = text;
+  btn.style.padding = "10px 20px";
+  btn.style.fontSize = "16px";
+  btn.style.cursor = "pointer";
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function movePlayer(dLat: number, dLng: number) {
+  playerPosition.lat += dLat * TILE_DEGREES;
+  playerPosition.lng += dLng * TILE_DEGREES;
+  map.setView(playerPosition);
+  render();
+}
+
+// Create movement buttons
+const northBtn = createButton("⬆️ N", () => movePlayer(1, 0));
+const southBtn = createButton("⬇️ S", () => movePlayer(-1, 0));
+const eastBtn = createButton("➡️ E", () => movePlayer(0, 1));
+const westBtn = createButton("⬅️ W", () => movePlayer(0, -1));
+
+const topRow = document.createElement("div");
+topRow.appendChild(northBtn);
+controlPanel.appendChild(topRow);
+
+const middleRow = document.createElement("div");
+middleRow.style.display = "flex";
+middleRow.style.gap = "10px";
+middleRow.appendChild(westBtn);
+middleRow.appendChild(eastBtn);
+controlPanel.appendChild(middleRow);
+
+const bottomRow = document.createElement("div");
+bottomRow.appendChild(southBtn);
+controlPanel.appendChild(bottomRow);
+
 // === Helper Functions ===
 
 function getCellBounds(cell: Cell): leaflet.LatLngBounds {
@@ -76,12 +129,19 @@ function latLngToCell(lat: number, lng: number): Cell {
 
 // === Mechanics ===
 const activeRectangles: leaflet.Rectangle[] = [];
+let playerMarker: leaflet.Marker | null = null;
 
 function updateStatus() {
   if (inventory === null) {
     statusPanel.innerHTML = "Inventory: Empty";
   } else {
     statusPanel.innerHTML = `Inventory: Token Value ${inventory}`;
+    if (inventory >= VICTORY_THRESHOLD) {
+      statusPanel.innerHTML +=
+        `<br><b>🎉 Victory! You reached ${VICTORY_THRESHOLD}!</b>`;
+    } else if (inventory >= 4) {
+      statusPanel.innerHTML += "<br><b>Success! You reached 4!</b>";
+    }
   }
 }
 
@@ -144,7 +204,7 @@ function render() {
         const distI = Math.abs(i - playerCell.i);
         const distJ = Math.abs(j - playerCell.j);
 
-        if (distI > 1 || distJ > 1) {
+        if (distI > INTERACTION_RANGE || distJ > INTERACTION_RANGE) {
           console.log("Too far");
           return;
         }
@@ -196,8 +256,11 @@ function render() {
     }
   }
 
-  // Player marker
-  const playerMarker = leaflet.marker(playerPosition);
+  // Player marker - remove old one first
+  if (playerMarker) {
+    map.removeLayer(playerMarker);
+  }
+  playerMarker = leaflet.marker(playerPosition);
   playerMarker.addTo(map);
   playerMarker.bindTooltip("You");
 }

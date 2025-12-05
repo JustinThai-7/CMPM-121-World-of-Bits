@@ -40,3 +40,5 @@ lerna-debug.log*
 ehthumbs.db
 Thumbs.db
 *.pdf
+*.rtf
+*.txt
