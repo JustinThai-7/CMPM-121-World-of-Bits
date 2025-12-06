@@ -35,8 +35,6 @@ const map = leaflet.map(document.createElement("div"), {
 // Append map to body
 const mapElement = map.getContainer();
 mapElement.id = "map";
-mapElement.style.width = "100%";
-mapElement.style.height = "100vh";
 document.body.appendChild(mapElement);
 
 leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -162,15 +160,15 @@ function render() {
 
   for (let i = southEastCell.i; i <= northWestCell.i; i++) {
     for (let j = northWestCell.j; j <= southEastCell.j; j++) {
-      const bounds = getCellBounds({ i, j });
+      const cellBounds = getCellBounds({ i, j });
       const value = getCellValue(i, j);
 
       let color = "transparent";
       if (value > 0) {
-        color = "red"; // Token present
+        color = "red";
       }
 
-      const rect = leaflet.rectangle(bounds, {
+      const rect = leaflet.rectangle(cellBounds, {
         color: "black",
         weight: 1,
         fillColor: color,
