@@ -47,36 +47,19 @@ leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 
 // === UI Setup ===
 const statusPanel = document.createElement("div");
-statusPanel.style.position = "absolute";
-statusPanel.style.top = "10px";
-statusPanel.style.left = "10px";
-statusPanel.style.zIndex = "1000";
-statusPanel.style.backgroundColor = "white";
-statusPanel.style.padding = "10px";
-statusPanel.style.border = "1px solid #ccc";
-statusPanel.style.borderRadius = "5px";
+statusPanel.id = "statusPanel";
 statusPanel.innerHTML = "Inventory: Empty";
 document.body.appendChild(statusPanel);
 
 // === Movement Controls ===
 const controlPanel = document.createElement("div");
-controlPanel.style.position = "absolute";
-controlPanel.style.bottom = "10px";
-controlPanel.style.left = "50%";
-controlPanel.style.transform = "translateX(-50%)";
-controlPanel.style.zIndex = "1000";
-controlPanel.style.display = "flex";
-controlPanel.style.flexDirection = "column";
-controlPanel.style.alignItems = "center";
-controlPanel.style.gap = "5px";
+controlPanel.id = "controlPanel";
 document.body.appendChild(controlPanel);
 
 function createButton(text: string, onClick: () => void): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.textContent = text;
-  btn.style.padding = "10px 20px";
-  btn.style.fontSize = "16px";
-  btn.style.cursor = "pointer";
+  btn.className = "move-btn";
   btn.addEventListener("click", onClick);
   return btn;
 }
@@ -99,8 +82,7 @@ topRow.appendChild(northBtn);
 controlPanel.appendChild(topRow);
 
 const middleRow = document.createElement("div");
-middleRow.style.display = "flex";
-middleRow.style.gap = "10px";
+middleRow.className = "control-row";
 middleRow.appendChild(westBtn);
 middleRow.appendChild(eastBtn);
 controlPanel.appendChild(middleRow);
@@ -208,48 +190,30 @@ function render() {
         const distJ = Math.abs(j - playerCell.j);
 
         if (distI > INTERACTION_RANGE || distJ > INTERACTION_RANGE) {
-          console.log("Too far");
           return;
         }
-
-        console.log(
-          `Clicked cell (${i}, ${j}). Value: ${value}. Inventory: ${inventory}`,
-        );
 
         if (value > 0) {
           // Collect or Craft
           if (inventory === null) {
-            // Collect
-            console.log("Collecting token");
+            // Collect token
             inventory = value;
             setCellValue(i, j, 0);
             updateStatus();
           } else if (inventory === value) {
-            // Craft
-            console.log("Crafting token");
-            // inventory += value; // This line was redundant/confusing in previous logic
-            // updateStatus();
-            // setCellValue(i, j, 0);
-
-            // Correct crafting logic:
-            // 1. Remove token from inventory (it merges into the cell)
+            // Craft: merge inventory token with cell token, doubling value
             inventory = null;
-            // 2. Cell value doubles
             setCellValue(i, j, value * 2);
             updateStatus();
           }
         } else {
-          // Deposit?
+          // Deposit token into empty cell
           if (inventory !== null) {
-            console.log("Depositing token");
             setCellValue(i, j, inventory);
             inventory = null;
             updateStatus();
-          } else {
-            console.log("Cannot deposit: inventory empty");
           }
         }
-        console.log(`End click. Inventory: ${inventory}`);
       });
 
       // Popup for info (optional but helpful)
