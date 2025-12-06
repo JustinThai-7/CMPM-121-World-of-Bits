@@ -34,3 +34,13 @@ Key technical challenge: Implementing dynamic location and map generation.
 - [x] dynamic map updating (memoryless cells + border)
 - [x] coordinate system
 - [x] set victory to 16
+
+### D3.c: Object Persistence
+
+Key technical challenge: Preserving map state efficiently.
+
+## To-Do
+
+- [ ] cells not visible on the map do not require memory for storage if they have not been modified by the player
+- [ ] preserve the state of modified cells when they scroll off-screen
+- [ ] restore them when they return to view

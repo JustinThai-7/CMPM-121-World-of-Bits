@@ -152,8 +152,6 @@ function setCellValue(i: number, j: number, value: number) {
 }
 
 function render() {
-  cellState.clear();
-
   // Clear existing layers
   activeRectangles.forEach((rect) => map.removeLayer(rect));
   activeRectangles.length = 0;
