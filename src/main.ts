@@ -89,6 +89,61 @@ const bottomRow = document.createElement("div");
 bottomRow.appendChild(southBtn);
 controlPanel.appendChild(bottomRow);
 
+// === Geolocation API ===
+let useGeolocation = false;
+let watchId: number | null = null;
+
+function setPlayerPosition(lat: number, lng: number) {
+  playerPosition.lat = lat;
+  playerPosition.lng = lng;
+  map.setView(playerPosition);
+  render();
+}
+
+function startGeolocation() {
+  if (!navigator.geolocation) {
+    alert("Geolocation is not supported by your browser");
+    return;
+  }
+
+  watchId = navigator.geolocation.watchPosition(
+    (position) => {
+      setPlayerPosition(position.coords.latitude, position.coords.longitude);
+    },
+    (error) => {
+      console.error("Geolocation error:", error.message);
+    },
+    { enableHighAccuracy: true },
+  );
+  useGeolocation = true;
+}
+
+function stopGeolocation() {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+  useGeolocation = false;
+}
+
+// Toggle button for movement mode
+const geoToggleBtn = createButton("📍 Use GPS", () => {
+  if (useGeolocation) {
+    stopGeolocation();
+    geoToggleBtn.textContent = "📍 Use GPS";
+    controlPanel.style.display = "flex";
+  } else {
+    startGeolocation();
+    geoToggleBtn.textContent = "🎮 Use Buttons";
+    controlPanel.style.display = "none";
+  }
+});
+geoToggleBtn.style.position = "absolute";
+geoToggleBtn.style.top = "10px";
+geoToggleBtn.style.right = "10px";
+geoToggleBtn.style.zIndex = "1000";
+document.body.appendChild(geoToggleBtn);
+
 // === Helper Functions ===
 
 function getCellBounds(cell: Cell): leaflet.LatLngBounds {

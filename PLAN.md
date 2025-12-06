@@ -41,6 +41,18 @@ Key technical challenge: Preserving map state efficiently.
 
 ## To-Do
 
-- [ ] cells not visible on the map do not require memory for storage if they have not been modified by the player
-- [ ] preserve the state of modified cells when they scroll off-screen
-- [ ] restore them when they return to view
+- [x] cells not visible on the map do not require memory for storage if they have not been modified by the player
+- [x] preserve the state of modified cells when they scroll off-screen
+- [x] restore them when they return to view
+
+### D3.d: Gameplay Across Real-world Space and Time
+
+Key technical challenge: Integrating real-time geolocation.
+
+## To-Do
+
+- [x] browser geolocation API can be used to control character movement
+- [ ] movement uses Facade design pattern
+- [ ] localStorage API is used to persist game state
+- [ ] new game button
+- [x] button to switch between button-based and geolocation-based movement
