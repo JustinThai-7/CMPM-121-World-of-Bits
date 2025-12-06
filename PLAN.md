@@ -52,7 +52,7 @@ Key technical challenge: Integrating real-time geolocation.
 ## To-Do
 
 - [x] browser geolocation API can be used to control character movement
-- [ ] movement uses Facade design pattern
-- [ ] localStorage API is used to persist game state
-- [ ] new game button
+- [x] movement uses Facade design pattern
+- [x] localStorage API is used to persist game state
+- [x] new game button
 - [x] button to switch between button-based and geolocation-based movement

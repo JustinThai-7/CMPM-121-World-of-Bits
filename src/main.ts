@@ -5,7 +5,7 @@ import luck from "./_luck.ts";
 import "./style.css";
 
 // === Constants ===
-const TILE_DEGREES = 1e-4;
+const TILE_DEGREES = 3e-5; // ~10 feet per cell
 const PIT_SPAWN_PROBABILITY = 0.5;
 const INTERACTION_RANGE = 3; // Number of cells away player can interact
 const VICTORY_THRESHOLD = 16; // Token value needed for victory
@@ -23,6 +23,44 @@ const playerPosition = {
 
 let inventory: number | null = null;
 
+// === localStorage Persistence ===
+const STORAGE_KEY = "worldOfBits";
+
+interface GameState {
+  playerPosition: { lat: number; lng: number };
+  inventory: number | null;
+  cellState: [string, number][];
+}
+
+function saveGame() {
+  const state: GameState = {
+    playerPosition: { ...playerPosition },
+    inventory,
+    cellState: [...cellState],
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function loadGame() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    const state: GameState = JSON.parse(saved);
+    playerPosition.lat = state.playerPosition.lat;
+    playerPosition.lng = state.playerPosition.lng;
+    inventory = state.inventory;
+    cellState.clear();
+    for (const [key, value] of state.cellState) {
+      cellState.set(key, value);
+    }
+    return true;
+  }
+  return false;
+}
+
+// State to track modified cells (collected/crafted)
+// Key: "i,j", Value: number (token value) or 0 (empty)
+const cellState = new Map<string, number>();
+
 // === Map Setup ===
 const map = leaflet.map(document.createElement("div"), {
   zoomControl: false,
@@ -30,7 +68,7 @@ const map = leaflet.map(document.createElement("div"), {
   boxZoom: false,
   dragging: false,
   doubleClickZoom: false,
-}).setView(playerPosition, 19);
+}).setView(playerPosition, 21);
 
 // Append map to body
 const mapElement = map.getContainer();
@@ -38,7 +76,8 @@ mapElement.id = "map";
 document.body.appendChild(mapElement);
 
 leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
+  maxZoom: 22,
+  maxNativeZoom: 19,
   attribution:
     '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 }).addTo(map);
@@ -89,9 +128,12 @@ const bottomRow = document.createElement("div");
 bottomRow.appendChild(southBtn);
 controlPanel.appendChild(bottomRow);
 
-// === Geolocation API ===
-let useGeolocation = false;
-let watchId: number | null = null;
+// === Movement Controller Facade ===
+interface MovementController {
+  start(): void;
+  stop(): void;
+  isActive(): boolean;
+}
 
 function setPlayerPosition(lat: number, lng: number) {
   playerPosition.lat = lat;
@@ -100,42 +142,64 @@ function setPlayerPosition(lat: number, lng: number) {
   render();
 }
 
-function startGeolocation() {
-  if (!navigator.geolocation) {
-    alert("Geolocation is not supported by your browser");
-    return;
-  }
+// Button-based movement controller
+const buttonMovement: MovementController = {
+  start() {
+    controlPanel.style.display = "flex";
+  },
+  stop() {
+    controlPanel.style.display = "none";
+  },
+  isActive() {
+    return controlPanel.style.display !== "none";
+  },
+};
 
-  watchId = navigator.geolocation.watchPosition(
-    (position) => {
-      setPlayerPosition(position.coords.latitude, position.coords.longitude);
-    },
-    (error) => {
-      console.error("Geolocation error:", error.message);
-    },
-    { enableHighAccuracy: true },
-  );
-  useGeolocation = true;
-}
+// Geolocation-based movement controller
+let geoWatchId: number | null = null;
+const geoMovement: MovementController = {
+  start() {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+    geoWatchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setPlayerPosition(position.coords.latitude, position.coords.longitude);
+      },
+      (error) => {
+        console.error("Geolocation error:", error.message);
+      },
+      { enableHighAccuracy: true },
+    );
+  },
+  stop() {
+    if (geoWatchId !== null) {
+      navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = null;
+    }
+  },
+  isActive() {
+    return geoWatchId !== null;
+  },
+};
 
-function stopGeolocation() {
-  if (watchId !== null) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-  }
-  useGeolocation = false;
-}
+// Current movement controller
+let currentMovement: MovementController = buttonMovement;
+currentMovement.start();
 
 // Toggle button for movement mode
 const geoToggleBtn = createButton("📍 Use GPS", () => {
-  if (useGeolocation) {
-    stopGeolocation();
+  if (currentMovement === geoMovement) {
+    currentMovement.stop();
+    currentMovement = buttonMovement;
+    currentMovement.start();
     geoToggleBtn.textContent = "📍 Use GPS";
-    controlPanel.style.display = "flex";
   } else {
-    startGeolocation();
+    currentMovement.stop();
+    currentMovement = geoMovement;
+    currentMovement.start();
     geoToggleBtn.textContent = "🎮 Use Buttons";
-    controlPanel.style.display = "none";
   }
 });
 geoToggleBtn.style.position = "absolute";
@@ -143,6 +207,19 @@ geoToggleBtn.style.top = "10px";
 geoToggleBtn.style.right = "10px";
 geoToggleBtn.style.zIndex = "1000";
 document.body.appendChild(geoToggleBtn);
+
+// New Game button
+const newGameBtn = createButton("🔄 New Game", () => {
+  if (confirm("Start a new game? All progress will be lost.")) {
+    localStorage.removeItem(STORAGE_KEY);
+    location.reload();
+  }
+});
+newGameBtn.style.position = "absolute";
+newGameBtn.style.top = "50px";
+newGameBtn.style.right = "10px";
+newGameBtn.style.zIndex = "1000";
+document.body.appendChild(newGameBtn);
 
 // === Helper Functions ===
 
@@ -181,10 +258,6 @@ function updateStatus() {
   }
 }
 
-// State to track modified cells (collected/crafted)
-// Key: "i,j", Value: number (token value) or 0 (empty)
-const cellState = new Map<string, number>();
-
 function getCellValue(i: number, j: number): number {
   const key = `${i},${j}`;
   if (cellState.has(key)) {
@@ -201,7 +274,8 @@ function getCellValue(i: number, j: number): number {
 function setCellValue(i: number, j: number, value: number) {
   const key = `${i},${j}`;
   cellState.set(key, value);
-  render(); // Re-render to show changes
+  saveGame();
+  render();
 }
 
 function render() {
@@ -285,6 +359,10 @@ function render() {
 // Initialize game
 map.whenReady(() => {
   map.invalidateSize();
+  if (loadGame()) {
+    map.setView(playerPosition);
+    updateStatus();
+  }
   render();
 });
 
