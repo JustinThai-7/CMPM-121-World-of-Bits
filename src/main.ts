@@ -114,6 +114,7 @@ controlPanel.appendChild(bottomRow);
 function getCellBounds(cell: Cell): leaflet.LatLngBounds {
   const lat = cell.i * TILE_DEGREES;
   const lng = cell.j * TILE_DEGREES;
+
   return leaflet.latLngBounds([
     [lat, lng],
     [lat + TILE_DEGREES, lng + TILE_DEGREES],
@@ -169,6 +170,8 @@ function setCellValue(i: number, j: number, value: number) {
 }
 
 function render() {
+  cellState.clear();
+
   // Clear existing layers
   activeRectangles.forEach((rect) => map.removeLayer(rect));
   activeRectangles.length = 0;
