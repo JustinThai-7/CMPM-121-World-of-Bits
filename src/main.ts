@@ -7,7 +7,7 @@ import "./style.css";
 // === Constants ===
 const TILE_DEGREES = 3e-5; // ~10 feet per cell
 const PIT_SPAWN_PROBABILITY = 0.5;
-const INTERACTION_RANGE = 3; // Number of cells away player can interact
+const INTERACTION_RANGE = 1; // Number of cells away player can interact
 const VICTORY_THRESHOLD = 16; // Token value needed for victory
 
 // === Game State ===
@@ -292,15 +292,21 @@ function render() {
       const cellBounds = getCellBounds({ i, j });
       const value = getCellValue(i, j);
 
-      let color = "transparent";
+      // Check if cell is in interaction range
+      const playerCell = latLngToCell(playerPosition.lat, playerPosition.lng);
+      const distI = Math.abs(i - playerCell.i);
+      const distJ = Math.abs(j - playerCell.j);
+      const inRange = distI <= INTERACTION_RANGE && distJ <= INTERACTION_RANGE;
+
+      let fillColor = "transparent";
       if (value > 0) {
-        color = "red";
+        fillColor = "red";
       }
 
       const rect = leaflet.rectangle(cellBounds, {
-        color: "black",
-        weight: 1,
-        fillColor: color,
+        color: inRange ? "green" : "black",
+        weight: inRange ? 2 : 1,
+        fillColor: fillColor,
         fillOpacity: 0.5,
       });
 
